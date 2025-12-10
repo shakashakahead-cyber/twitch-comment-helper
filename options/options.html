@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>Twitch Comment Helper 設定</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Twitch Comment Helper 設定</h1>
+
+      <section>
+        <h2>編集するチャンネル</h2>
+        <p>
+          空欄の場合は <strong>全チャンネル共通</strong> のテンプレートを編集します。<br />
+          特定のチャンネル名（例: <code>akatsukisaemon</code>）を入れると、その枠専用になります。
+        </p>
+        <div class="channel-select">
+          <label>
+            チャンネル名：
+            <input id="channel-id-input" type="text" placeholder="例: akatsukisaemon （空欄＝全体）" />
+          </label>
+          <button id="load-channel-btn">読み込み</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>テンプレート一覧</h2>
+        <p>1行が1つのテンプレです。テキストとカテゴリを編集できます。</p>
+        <table id="template-table">
+          <thead>
+            <tr>
+              <th style="width: 55%;">テキスト</th>
+              <th style="width: 25%;">カテゴリ</th>
+              <th style="width: 20%;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="template-tbody"></tbody>
+        </table>
+        <button id="add-template-btn">＋ テンプレを追加</button>
+      </section>
+
+      <section>
+        <h2>全体設定</h2>
+        <label class="checkbox-row">
+          <input type="checkbox" id="global-autosend" />
+          ボタンを押したら自動的に送信する（デフォルト OFF 推奨）
+        </label>
+        <label>
+          クールタイム（ミリ秒）：
+
+
+
+
+          <input
+            type="number"
+            id="global-cooldown"
+            min="0"
+            step="500"
+            value="3000"
+          />
+        </label>
+      </section>
+
+      <section class="actions">
+        <button id="save-btn">保存</button>
+        <span id="status"></span>
+      </section>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>

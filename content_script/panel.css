@@ -1,0 +1,130 @@
+#tch-panel-root {
+  position: fixed;
+  right: 365px;
+  top: 85px;
+  width: 240px;
+  max-height: 320px;
+  background: rgba(24, 24, 27, 0.95);
+  color: #f9fafb;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  border-radius: 8px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.6);
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#tch-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: rgba(39, 39, 42, 0.98);
+  cursor: move;
+}
+
+#tch-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#tch-panel-toggle {
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+#tch-panel-toggle:hover {
+  opacity: 1;
+}
+
+#tch-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  border-bottom: 1px solid #27272a;
+}
+
+.tch-tab {
+  padding: 4px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  color: #a1a1aa;
+}
+
+.tch-tab.tch-tab-active {
+  color: #f9fafb;
+  border-bottom-color: #6366f1;
+}
+
+#tch-templates {
+  padding: 4px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.tch-template-btn {
+  width: 100%;
+  text-align: left;
+  padding: 4px 6px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: #27272a;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.tch-template-btn:hover {
+  background: #3f3f46;
+}
+
+.tch-template-btn.tch-btn-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#tch-footer {
+  padding: 4px 8px;
+  border-top: 1px solid #27272a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+#tch-footer label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#tch-footer button {
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  background: #374151;
+  color: #e5e7eb;
+}
+
+#tch-footer button:hover {
+  background: #4b5563;
+}
+
+#tch-panel-root.tch-collapsed {
+  height: auto;
+  max-height: none;
+}
+
+#tch-panel-root.tch-collapsed #tch-tabs,
+#tch-panel-root.tch-collapsed #tch-templates,
+#tch-panel-root.tch-collapsed #tch-footer {
+  display: none;
+}

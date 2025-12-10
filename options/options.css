@@ -1,0 +1,130 @@
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+  background: #0f172a;
+  color: #e5e7eb;
+  margin: 0;
+  padding: 0;
+}
+
+main {
+  max-width: 800px;
+  margin: 24px auto;
+  padding: 16px 24px 40px;
+  background: #020617;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 16px;
+}
+
+h2 {
+  font-size: 18px;
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+
+p {
+  margin: 4px 0 8px;
+  color: #9ca3af;
+}
+
+section {
+  margin-bottom: 16px;
+}
+
+.channel-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+label input[type="text"],
+label input[type="number"] {
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #374151;
+  background: #020617;
+  color: #e5e7eb;
+  min-width: 240px;
+}
+
+#template-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+#template-table th,
+#template-table td {
+  border: 1px solid #1f2937;
+  padding: 4px 6px;
+}
+
+#template-table thead {
+  background: #111827;
+}
+
+#template-table tbody tr:nth-child(even) {
+  background: #020617;
+}
+
+#template-table tbody tr:nth-child(odd) {
+  background: #030712;
+}
+
+#template-table input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+button {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  background: #4f46e5;
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+button:hover {
+  background: #6366f1;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#add-template-btn {
+  margin-top: 4px;
+  background: #374151;
+}
+
+#add-template-btn:hover {
+  background: #4b5563;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+#status {
+  font-size: 13px;
+  color: #22c55e;
+}

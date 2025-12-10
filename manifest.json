@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Twitch Comment Helper",
+  "version": "0.4.0",
+  "description": "テンプレボタンでTwitchのコメントを送りやすくするリスナー向け拡張機能。",
+  "permissions": [
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.twitch.tv/*",
+        "https://dashboard.twitch.tv/*",
+        "https://www.twitch.tv/popout/*/chat*"
+      ],
+      "js": [
+        "content_script/content.js"
+      ],
+      "css": [
+        "content_script/panel.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html"
+}
