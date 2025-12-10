@@ -5,24 +5,60 @@
 const TCH_DEFAULT_GLOBAL_SETTINGS = {
   autoSend: false,
   coolDownMs: 3000,
-  position: null // { left, top }
+  position: null, // { left, top }
+  activeMode: "regular"
 };
 
+// Mode definitions
+const TCH_DEFAULTS_FIRST = [
+  { id: "f-greet-1", text: "初見です！", categoryId: "greeting" },
+  { id: "f-greet-2", text: "お邪魔します～", categoryId: "greeting" },
+  { id: "f-greet-3", text: "おすすめから来ました！", categoryId: "greeting" },
+  { id: "f-greet-4", text: "楽しそうですね！", categoryId: "greeting" },
+  { id: "f-greet-5", text: "フォローしました！", categoryId: "greeting" },
+
+  { id: "f-praise-1", text: "ナイスです！", categoryId: "praise" },
+  { id: "f-praise-2", text: "888888", categoryId: "praise" },
+  { id: "f-praise-3", text: "すごい！", categoryId: "praise" },
+  { id: "f-praise-4", text: "上手ですね", categoryId: "praise" },
+  { id: "f-praise-5", text: "感動", categoryId: "praise" },
+
+  { id: "f-fun-1", text: "草", categoryId: "fun" },
+  { id: "f-fun-2", text: "！？", categoryId: "fun" },
+  { id: "f-fun-3", text: "勉強になります", categoryId: "fun" },
+  { id: "f-fun-4", text: "なるほど", categoryId: "fun" },
+  { id: "f-fun-5", text: "ありがとうございます", categoryId: "fun" }
+];
+
+const TCH_DEFAULTS_REGULAR = [
+  { id: "r-greet-1", text: "おっす", categoryId: "greeting" },
+  { id: "r-greet-2", text: "やっほー", categoryId: "greeting" },
+  { id: "r-greet-3", text: "ども", categoryId: "greeting" },
+  { id: "r-greet-4", text: "|ω・)ﾁﾗｯ", categoryId: "greeting" },
+  { id: "r-greet-5", text: "おかえり", categoryId: "greeting" },
+
+  { id: "r-praise-1", text: "ナイス！", categoryId: "praise" },
+  { id: "r-praise-2", text: "GG", categoryId: "praise" },
+  { id: "r-praise-3", text: "神", categoryId: "praise" },
+  { id: "r-praise-4", text: "天才", categoryId: "praise" },
+  { id: "r-praise-5", text: "つっよ", categoryId: "praise" },
+
+  { id: "r-fun-1", text: "草", categoryId: "fun" },
+  { id: "r-fun-2", text: "！？", categoryId: "fun" },
+  { id: "r-fun-3", text: "わかる", categoryId: "fun" },
+  { id: "r-fun-4", text: "たすかる", categoryId: "fun" },
+  { id: "r-fun-5", text: "なるほど", categoryId: "fun" }
+];
+
 const TCH_DEFAULT_TEMPLATES = {
-  "*": [
-    { id: "greet-1", text: "初見です！よろしくお願いします", categoryId: "greeting" },
-    { id: "greet-2", text: "おつです！今日も来ました", categoryId: "greeting" },
-    { id: "praise-1", text: "ナイス！", categoryId: "praise" },
-    { id: "praise-2", text: "GG！", categoryId: "praise" },
-    { id: "fun-1", text: "それは草", categoryId: "fun" },
-    { id: "fun-2", text: "今日も安定の沼w", categoryId: "fun" }
-  ]
+  first: TCH_DEFAULTS_FIRST,
+  regular: TCH_DEFAULTS_REGULAR
 };
 
 const TCH_DEFAULT_CATEGORIES = {
   greeting: "挨拶",
-  praise: "ナイス・GG",
-  fun: "ツッコミ・ネタ"
+  praise: "応援・称賛",
+  fun: "リアクション"
 };
 
 const tchLastUsedMap = {};
@@ -31,24 +67,23 @@ function tchLog(...args) {
   console.log("[TCH]", ...args);
 }
 
-function tchGetChannelId() {
-  const host = window.location.host;
-  const pathParts = window.location.pathname.split("/").filter(Boolean);
-
-  if (host === "www.twitch.tv" && pathParts.length === 1) {
-    return pathParts[0];
-  }
-
-  return "*";
-}
-
 function tchLoadStorage(callback) {
   chrome.storage.sync.get(null, (data) => {
     const mergedGlobal = { ...TCH_DEFAULT_GLOBAL_SETTINGS, ...(data.globalSettings || {}) };
-    const templates =
-      data.templates && Object.keys(data.templates).length > 0
-        ? data.templates
-        : { ...TCH_DEFAULT_TEMPLATES };
+
+    // Logic similar to options.js: ensure first/regular exist
+    // But data might still be old schema if options haven't been opened yet.
+    let storedTemplates = data.templates || {};
+
+    // Basic migration check (read-only migration for safe rendering)
+    if (storedTemplates["*"] && !storedTemplates.regular) {
+      storedTemplates.regular = storedTemplates["*"];
+    }
+
+    const templates = {
+      first: storedTemplates.first || TCH_DEFAULT_TEMPLATES.first,
+      regular: storedTemplates.regular || TCH_DEFAULT_TEMPLATES.regular
+    };
 
     callback({ globalSettings: mergedGlobal, templates });
   });
@@ -62,26 +97,83 @@ function tchSaveGlobalSettings(patch) {
   });
 }
 
+// ========== ユーティリティ ==========
+
+function tchIsElVisible(el) {
+  if (!el) return false;
+
+  // 1. Basic Dimensions Check (Gold Standard for "Does it exist on screen")
+  const rect = el.getBoundingClientRect();
+  // Allow slightly smaller elements but ensure strictly positive area
+  if (rect.width <= 0 || rect.height <= 0) return false;
+
+  // 2. CSS Visibility Check (for display:none, visibility:hidden)
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none') return false;
+  if (style.visibility === 'hidden') return false;
+  if (parseFloat(style.opacity) === 0) return false;
+
+  return true;
+}
+
+function tchGetChannelName() {
+  // Simple URL parsing: https://www.twitch.tv/channelName
+  const path = window.location.pathname;
+  const parts = path.split("/").filter(p => p);
+  if (parts.length > 0) {
+    if (parts[0] === "popout") return parts[1]; // popout/channel/chat
+    return parts[0];
+  }
+  return null;
+}
+
+function tchRecordHistory() {
+  try {
+    const channel = tchGetChannelName();
+    if (!channel) return;
+
+    chrome.storage.sync.get("history", (data) => {
+      if (chrome.runtime.lastError) return;
+
+      const history = data.history || {};
+      // If not already in history, or we want to update timestamp
+      if (!history[channel]) {
+        history[channel] = Date.now();
+        chrome.storage.sync.set({ history });
+        tchLog("History recorded for:", channel);
+      }
+    });
+  } catch (e) {
+    console.error("[TCH] History Record Error:", e);
+  }
+}
+
 // ========== チャット入力欄の取得 ==========
 
 function tchFindChatInput() {
-  // 1. 昔の textarea スタイル
-  let el = document.querySelector('textarea[data-a-target="chat-input"]');
-  if (el) return el;
+  // Collect all potential candidates with broader selectors for responsive layouts
+  const candidates = [
+    // Standard Desktop
+    ...document.querySelectorAll('textarea[data-a-target="chat-input"]'),
+    ...document.querySelectorAll('[data-a-target="chat-input"][contenteditable="true"]'),
+    ...document.querySelectorAll('[data-a-target="chat-input"] [contenteditable="true"]'),
 
-  // 2. data-a-target="chat-input" を持つ contenteditable
-  el = document.querySelector('[data-a-target="chat-input"][contenteditable="true"]');
-  if (el) return el;
+    // Fallbacks for Narrow/Mobile/Alternative Layouts
+    ...document.querySelectorAll('.chat-input__textarea textarea'),
+    ...document.querySelectorAll('.chat-wysiwyg-input__editor'),
+    ...document.querySelectorAll('[data-test-selector="chat-input"]'),
+    ...document.querySelectorAll('textarea[placeholder*="メッセージを送信"]'), // Japanese locale specific fallback
+    ...document.querySelectorAll('textarea[aria-label="チャット入力"]')      // Accessibility label fallback
+  ];
 
-  // 3. コンテナの中の contenteditable
-  const container = document.querySelector('[data-a-target="chat-input"]');
-  if (container) {
-    el = container.querySelector('[contenteditable="true"]');
-    if (el) return el;
+  // Return the first one that is actually visible
+  for (const el of candidates) {
+    if (tchIsElVisible(el)) return el;
   }
 
   return null;
 }
+
 
 function tchInsertTextToChat(text) {
   const input = tchFindChatInput();
@@ -102,15 +194,9 @@ function tchInsertTextToChat(text) {
   } else {
     // contenteditable (Twitch/Slate)
     tchLog("Found chat input (contenteditable):", input);
-
-    // 1. カーソル位置を確実にセットする (Selection補正)
     tchFocusCaret(input);
 
     try {
-      // Smart Hybrid Strategy:
-      // エディタの機嫌を損ねずにテキストを挿入する
-
-      // A. beforeinput を「お伺い」として投げる
       const beforeInput = new InputEvent('beforeinput', {
         bubbles: true,
         cancelable: true,
@@ -118,17 +204,12 @@ function tchInsertTextToChat(text) {
         data: text
       });
       const handled = !input.dispatchEvent(beforeInput);
-      tchLog("beforeinput handled:", handled);
 
-      // B. エディタが beforeinput を無視した場合のみ、強制的に書き込む (execCommand)
-      //    Twitch(Slate)が正しく実装されていれば beforeinput をpreventDefaultするはずだが、
-      //    しない場合は標準APIに頼る
       if (!handled) {
         const execResult = document.execCommand("insertText", false, text);
         tchLog("execCommand result:", execResult);
       }
 
-      // C. inputイベント (念のための同期)
       const inputEvent = new InputEvent("input", {
         bubbles: true,
         cancelable: true,
@@ -144,31 +225,23 @@ function tchInsertTextToChat(text) {
   }
 }
 
-// カーソルを要素の末尾（テキストノードの中）にセットする関数
 function tchFocusCaret(el) {
   el.focus();
-
-  // 最深部のテキストノードを見つける
   let targetNode = el;
   while (targetNode.lastChild) {
     targetNode = targetNode.lastChild;
   }
-
-  // Selectionを作成
   const range = document.createRange();
   if (targetNode.nodeType === Node.TEXT_NODE) {
     range.selectNodeContents(targetNode);
-    range.collapse(false); // 末尾
+    range.collapse(false);
   } else {
     range.selectNodeContents(el);
     range.collapse(false);
   }
-
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
-
-  tchLog("Focused caret at:", targetNode);
 }
 
 function tchSendChat() {
@@ -196,7 +269,6 @@ function tchApplyPosition(root, globalSettings) {
     root.style.top = pos.top + "px";
     root.style.right = "auto";
   } else {
-    // デフォルト位置：チャット欄(右側340px程度)の左隣、上部
     root.style.right = "365px";
     root.style.top = "85px";
     root.style.left = "auto";
@@ -214,6 +286,10 @@ function tchMakeDraggable(root) {
   let startTop = 0;
 
   function onMouseDown(e) {
+    // Don't drag if clicking buttons inside header
+    if (e.target.tagName === "BUTTON" || e.target.classList.contains("tch-mode-switch")) {
+      return;
+    }
     isDragging = true;
     const rect = root.getBoundingClientRect();
     startX = e.clientX;
@@ -275,9 +351,24 @@ function tchCreatePanelRoot(globalSettings) {
   const header = document.createElement("div");
   header.id = "tch-panel-header";
 
+  // Title container
+  const titleArea = document.createElement("div");
+  titleArea.style.display = "flex";
+  titleArea.style.alignItems = "center";
+  titleArea.style.gap = "8px";
+
   const title = document.createElement("div");
   title.id = "tch-panel-title";
-  title.textContent = "コメントテンプレ";
+  title.textContent = "コメント";
+
+  // Mode Switcher in Header
+  const modeSwitch = document.createElement("button");
+  modeSwitch.className = "tch-mode-switch";
+  // Initial text set by render logic, but set default here
+  modeSwitch.textContent = globalSettings.activeMode === "first" ? "🔰 初見" : "🔄 常連";
+
+  titleArea.appendChild(title);
+  titleArea.appendChild(modeSwitch);
 
   const toggle = document.createElement("div");
   toggle.id = "tch-panel-toggle";
@@ -287,7 +378,7 @@ function tchCreatePanelRoot(globalSettings) {
     toggle.textContent = root.classList.contains("tch-collapsed") ? "+" : "−";
   });
 
-  header.appendChild(title);
+  header.appendChild(titleArea);
   header.appendChild(toggle);
 
   const tabs = document.createElement("div");
@@ -305,14 +396,14 @@ function tchCreatePanelRoot(globalSettings) {
   autoSendCheckbox.id = "tch-autosend-checkbox";
 
   const autoSendText = document.createElement("span");
-  autoSendText.textContent = "クリックで自動送信";
+  autoSendText.textContent = "自動送信";
 
   autoSendLabel.appendChild(autoSendCheckbox);
   autoSendLabel.appendChild(autoSendText);
 
   const optsButton = document.createElement("button");
   optsButton.type = "button";
-  optsButton.textContent = "設定を開く";
+  optsButton.textContent = "設定";
   optsButton.addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "TCH_OPEN_OPTIONS" });
   });
@@ -335,125 +426,303 @@ function tchCreatePanelRoot(globalSettings) {
 
 // ========== パネル中身 ==========
 
-function tchBuildTabsAndButtons(root, globalSettings, templatesForChannel) {
+function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
   const tabs = root.querySelector("#tch-tabs");
   const templatesContainer = root.querySelector("#tch-templates");
   const autoSendCheckbox = root.querySelector("#tch-autosend-checkbox");
+  const modeSwitch = root.querySelector(".tch-mode-switch");
 
+  // Logic for Auto-Mode
+  const channel = tchGetChannelName();
+  let currentMode = "regular"; // Default fallback
+
+  // 1. If we have history for this channel, use 'regular'
+  // 2. If NO history, use 'first'
+  // 3. (Optional) If we want to respect last manual setting globally? 
+  //    The user requirement is "Auto set based on situation". 
+  //    So History overrides Global Setting for the *initial* state.
+
+  if (channel && history && history[channel]) {
+    currentMode = "regular";
+  } else if (channel) {
+    currentMode = "first";
+  } else {
+    // If we can't detect channel, fallback to last global setting or regular
+    currentMode = globalSettings.activeMode || "regular";
+  }
+
+  // AutoSend
   autoSendCheckbox.checked = !!globalSettings.autoSend;
   autoSendCheckbox.addEventListener("change", (e) => {
     const checked = e.target.checked;
     tchSaveGlobalSettings({ autoSend: checked });
+    globalSettings.autoSend = checked;
   });
 
-  const categories = [];
-  templatesForChannel.forEach((tpl) => {
-    if (!categories.includes(tpl.categoryId)) {
-      categories.push(tpl.categoryId);
-    }
-  });
-  if (categories.length === 0) {
-    templatesContainer.textContent = "テンプレが設定されていません。";
-    return;
-  }
+  // Mode Switch Logic
+  const updateModeUI = () => {
+    modeSwitch.textContent = currentMode === "first" ? "🔰 初見" : "🔄 常連";
+    modeSwitch.style.background = currentMode === "first" ? "#10b981" : "#6366f1";
+    modeSwitch.style.color = "#fff";
+    modeSwitch.style.border = "none";
+    modeSwitch.style.borderRadius = "4px";
+    modeSwitch.style.padding = "2px 6px";
+    modeSwitch.style.fontSize = "10px";
+    modeSwitch.style.cursor = "pointer";
+    modeSwitch.style.fontWeight = "bold";
 
-  let activeCategory = categories[0];
+    const templatesForMode = allTemplates[currentMode] || [];
+    renderTabsAndTemplates(templatesForMode);
+  };
 
-  tabs.innerHTML = "";
-  categories.forEach((catId) => {
-    const tabEl = document.createElement("div");
-    tabEl.className = "tch-tab";
-    if (catId === activeCategory) {
-      tabEl.classList.add("tch-tab-active");
+  modeSwitch.onclick = () => {
+    currentMode = currentMode === "first" ? "regular" : "first";
+    // We do NOT save this to globalSettings.activeMode anymore 
+    // because we want the AUTO logic to take precedence on next load?
+    // Or maybe we save it as a "preference override"? 
+    // For now, let's just change local state. 
+    // If user reloads, it re-evaluates history. This is safer for "first time" logic.
+    updateModeUI();
+  };
+
+  // Render Core
+  const renderTabsAndTemplates = (templatesList) => {
+    // 1. Extract unique categories from this list
+    const categories = [];
+    templatesList.forEach((tpl) => {
+      if (!categories.includes(tpl.categoryId)) {
+        categories.push(tpl.categoryId);
+      }
+    });
+
+    if (categories.length === 0) {
+      tabs.innerHTML = "";
+      templatesContainer.textContent = "設定がありません";
+      return;
     }
-    tabEl.textContent = TCH_DEFAULT_CATEGORIES[catId] || catId;
-    tabEl.dataset.categoryId = catId;
-    tabEl.addEventListener("click", () => {
-      activeCategory = catId;
-      tabs.querySelectorAll(".tch-tab").forEach((t) => {
-        t.classList.toggle(
-          "tch-tab-active",
-          t.dataset.categoryId === activeCategory
-        );
+
+    let activeCategory = categories[0];
+
+    // Render Tabs
+    tabs.innerHTML = "";
+    categories.forEach((catId) => {
+      const tabEl = document.createElement("div");
+      tabEl.className = "tch-tab";
+      if (catId === activeCategory) {
+        tabEl.classList.add("tch-tab-active");
+      }
+      tabEl.textContent = TCH_DEFAULT_CATEGORIES[catId] || catId;
+      tabEl.dataset.categoryId = catId;
+      tabEl.addEventListener("click", () => {
+        activeCategory = catId;
+        tabs.querySelectorAll(".tch-tab").forEach((t) => {
+          t.classList.toggle(
+            "tch-tab-active",
+            t.dataset.categoryId === activeCategory
+          );
+        });
+        renderButtons(templatesList, activeCategory);
       });
-      tchRenderButtons(
-        templatesContainer,
-        templatesForChannel,
-        activeCategory,
-        globalSettings
-      );
-    });
-    tabs.appendChild(tabEl);
-  });
-
-  tchRenderButtons(
-    templatesContainer,
-    templatesForChannel,
-    activeCategory,
-    globalSettings
-  );
-}
-
-function tchRenderButtons(
-  templatesContainer,
-  templatesForChannel,
-  activeCategory,
-  globalSettings
-) {
-  templatesContainer.innerHTML = "";
-
-  const filtered = templatesForChannel.filter(
-    (tpl) => tpl.categoryId === activeCategory
-  );
-
-  if (filtered.length === 0) {
-    const msg = document.createElement("div");
-    msg.textContent = "このカテゴリにはテンプレがありません。";
-    templatesContainer.appendChild(msg);
-    return;
-  }
-
-  filtered.forEach((tpl) => {
-    const btn = document.createElement("button");
-    btn.className = "tch-template-btn";
-    btn.textContent = tpl.text;
-
-    btn.addEventListener("click", () => {
-      const now = Date.now();
-      const lastUsed = tchLastUsedMap[tpl.id] || 0;
-      if (now - lastUsed < (globalSettings.coolDownMs || 0)) {
-        return;
-      }
-      tchLastUsedMap[tpl.id] = now;
-
-      tchInsertTextToChat(tpl.text);
-
-      if (globalSettings.autoSend) {
-        tchSendChat();
-      }
+      tabs.appendChild(tabEl);
     });
 
-    templatesContainer.appendChild(btn);
-  });
+    // Initial render of buttons
+    renderButtons(templatesList, activeCategory);
+  };
+
+  const renderButtons = (list, catId) => {
+    templatesContainer.innerHTML = "";
+    const filtered = list.filter(t => t.categoryId === catId);
+
+    if (filtered.length === 0) {
+      templatesContainer.textContent = "（空）";
+      return;
+    }
+
+    // Enforce stricter 5-item limit as requested
+    const validItems = filtered.slice(0, 5);
+
+    validItems.forEach((tpl) => {
+      const btn = document.createElement("button");
+      btn.className = "tch-template-btn";
+      btn.textContent = tpl.text;
+
+      btn.addEventListener("click", () => {
+        const now = Date.now();
+        const lastUsed = tchLastUsedMap[tpl.id] || 0;
+        if (now - lastUsed < (globalSettings.coolDownMs || 0)) {
+          return;
+        }
+        tchLastUsedMap[tpl.id] = now;
+
+        tchInsertTextToChat(tpl.text);
+
+        // RECORD HISTORY Only on AutoSend or Manual Send (via global listeners)
+        if (globalSettings.autoSend) {
+          tchSendChat();
+          tchRecordHistory();
+        }
+      });
+
+      templatesContainer.appendChild(btn);
+    });
+  };
+
+  // Initial call
+  updateModeUI();
 }
 
 // ========== 初期化 ==========
 
 function tchInit() {
-  const channelId = tchGetChannelId();
-  tchLoadStorage(({ globalSettings, templates }) => {
-    const channelTemplates =
-      (templates[channelId] && templates[channelId].length > 0)
-        ? templates[channelId]
-        : (templates["*"] || TCH_DEFAULT_TEMPLATES["*"]);
+  try {
+    chrome.storage.sync.get(null, (data) => {
+      if (chrome.runtime.lastError) {
+        console.error("[TCH] Storage Error:", chrome.runtime.lastError);
+        return;
+      }
 
-    const root = tchCreatePanelRoot(globalSettings);
-    tchBuildTabsAndButtons(root, globalSettings, channelTemplates);
-  });
+      const globalSettings = { ...TCH_DEFAULT_GLOBAL_SETTINGS, ...(data.globalSettings || {}) };
+
+      let storedTemplates = data.templates || {};
+      if (storedTemplates["*"] && !storedTemplates.regular) {
+        storedTemplates.regular = storedTemplates["*"];
+      }
+
+      // Load History
+      const history = data.history || {};
+
+      // Helper to validate and default
+      const getOrDef = (arr, def) => {
+        if (!Array.isArray(arr) || arr.length === 0) return def;
+        const valid = arr.filter(t => t && t.text && t.categoryId);
+        if (valid.length === 0) return def;
+        return valid;
+      };
+
+      const templates = {
+        first: getOrDef(storedTemplates.first, TCH_DEFAULT_TEMPLATES.first),
+        regular: getOrDef(storedTemplates.regular, TCH_DEFAULT_TEMPLATES.regular)
+      };
+
+      tchLog("Initialized with templates:", templates);
+      tchLog("Current History:", history);
+      tchLog("Detected Channel:", tchGetChannelName());
+
+      const root = tchCreatePanelRoot(globalSettings);
+      tchBuildPanelContent(root, globalSettings, templates, history);
+    });
+  } catch (e) {
+    console.error("[TCH] Context Invalidated or Init Error:", e);
+    const warn = document.createElement("div");
+    warn.style.position = "fixed";
+    warn.style.top = "10px";
+    warn.style.left = "50%";
+    warn.style.transform = "translateX(-50%)";
+    warn.style.background = "#ef4444";
+    warn.style.color = "white";
+    warn.style.padding = "10px 20px";
+    warn.style.borderRadius = "8px";
+    warn.style.zIndex = "2147483647";
+    warn.style.fontWeight = "bold";
+    warn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.5)";
+    warn.textContent = "拡張機能が更新されました。ページを再読み込みしてください。";
+    document.body.appendChild(warn);
+  }
 }
 
+// Watchdog to handle SPA navigation or DOM wiping
+let lastChannel = null;
+
+setInterval(() => {
+  const currentChannel = tchGetChannelName();
+
+  // 1. Check if channel changed (SPA navigation)
+  if (currentChannel && lastChannel && currentChannel !== lastChannel) {
+    tchLog("Channel changed, resetting panel...");
+    const existing = document.getElementById("tch-panel-root");
+    if (existing) existing.remove();
+    lastChannel = currentChannel;
+    tchInit();
+    return;
+  }
+
+  // 2. Check if panel is missing (DOM wiped)
+  if (!document.getElementById("tch-panel-root")) {
+    tchLog("Panel missing, re-initializing...");
+    lastChannel = currentChannel; // Update lastChannel to current
+    tchInit();
+  } else {
+    // 3. Toggle visibility based on chat existence AND visibility
+    const panel = document.getElementById("tch-panel-root");
+    const chatInput = tchFindChatInput();
+
+    // Check if input is technically visible (has size)
+    const isVisible = (el) => {
+      if (!el) return false;
+
+      // 1. Size Check (Ignore 0x0 or tiny ghost elements)
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 10 || rect.height < 10) return false;
+
+      // 2. Modern Browser Visibility Check
+      if (el.checkVisibility) {
+        return el.checkVisibility({
+          checkOpacity: true,
+          checkVisibilityCSS: true
+        });
+      }
+
+      // Fallback
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity) > 0;
+    };
+
+    const isInputVisible = isVisible(chatInput);
+
+    if (isInputVisible) {
+      if (panel.style.display === "none") panel.style.display = "flex";
+    } else {
+      if (panel.style.display !== "none") panel.style.display = "none";
+    }
+  }
+}, 1000);
+
+// Global listeners for manual interaction (history recording)
+document.addEventListener("keydown", (e) => {
+  // Enter key on chat input (ignore IME composition and Shift+Enter)
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    const target = e.target;
+    // Check if looking at chat input
+    if (target.matches && (target.matches('[data-a-target="chat-input"]') || target.closest('[data-a-target="chat-input"]'))) {
+      tchLog("Manual chat detected (Enter)");
+      tchRecordHistory();
+    }
+  }
+}, true); // Capture phase
+
+document.addEventListener("click", (e) => {
+  // Click on chat send button
+  if (e.target.closest && e.target.closest('[data-a-target="chat-send-button"]')) {
+    tchLog("Manual chat detected (Send Button)");
+    tchRecordHistory();
+  }
+}, true);
+
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", tchInit);
+  document.addEventListener("DOMContentLoaded", () => {
+    lastChannel = tchGetChannelName();
+    try {
+      tchInit();
+    } catch (e) {
+      console.error("[TCH] Init Error:", e);
+    }
+  });
 } else {
-  tchInit();
+  lastChannel = tchGetChannelName();
+  try {
+    tchInit();
+  } catch (e) {
+    console.error("[TCH] Init Error:", e);
+  }
 }

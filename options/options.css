@@ -28,6 +28,35 @@ h2 {
   margin-bottom: 8px;
 }
 
+.mode-switch-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 10px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  cursor: pointer;
+  border-radius: 6px;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+.mode-btn.mode-active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
 p {
   margin: 4px 0 8px;
   color: #9ca3af;
@@ -53,53 +82,64 @@ label input[type="number"] {
   min-width: 240px;
 }
 
-#template-table {
+/* Obsolete table styles removed */
+
+/* New Fixed Layout Styles */
+.category-section {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  border: 1px solid #334155;
+}
+
+.category-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #c084fc;
+  /* Tinted violet */
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+}
+
+.input-row input[type="text"] {
   width: 100%;
-  border-collapse: collapse;
-  margin-top: 8px;
-  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #475569;
+  background: #0f172a;
+  color: #f1f5f9;
+  font-size: 14px;
+  transition: border-color 0.2s;
 }
 
-#template-table th,
-#template-table td {
-  border: 1px solid #1f2937;
-  padding: 4px 6px;
-}
-
-#template-table thead {
-  background: #111827;
-}
-
-#template-table tbody tr:nth-child(even) {
-  background: #020617;
-}
-
-#template-table tbody tr:nth-child(odd) {
-  background: #030712;
-}
-
-#template-table input[type="text"] {
-  width: 100%;
-  box-sizing: border-box;
+.input-row input[type="text"]:focus {
+  border-color: #818cf8;
+  outline: none;
 }
 
 button {
-  padding: 4px 10px;
-  border-radius: 4px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: #6366f1;
+  color: #ffffff;
+  font-weight: 500;
   border: none;
   cursor: pointer;
-  background: #4f46e5;
-  color: #e5e7eb;
-  font-size: 13px;
+  transition: background 0.2s;
 }
 
 button:hover {
-  background: #6366f1;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
+  background: #4f46e5;
 }
 
 #add-template-btn {
