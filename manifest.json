@@ -17,7 +17,6 @@
     {
       "matches": [
         "https://www.twitch.tv/*",
-        "https://dashboard.twitch.tv/*",
         "https://www.twitch.tv/popout/*/chat*"
       ],
       "js": [

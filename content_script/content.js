@@ -3,6 +3,7 @@
 // =========================
 
 const TCH_DEFAULT_GLOBAL_SETTINGS = {
+  extensionEnabled: true,
   autoSend: false,
   coolDownMs: 3000,
   position: null, // { left, top }
@@ -699,108 +700,160 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
     }
 
     async function renderAIForRecommended(isAuto = false) {
+      // 1. Setup Container Layout (Header + Content) if not already structured
+      // We need to re-render header every time to capture state (or just update text?)
+      // Simplest approach: Re-render all, but keep structure clear.
+
+      templatesContainer.innerHTML = "";
+
+      // --- HEADER START ---
+      const headerArea = document.createElement("div");
+      headerArea.style.display = "flex";
+      headerArea.style.justifyContent = "space-between";
+      headerArea.style.alignItems = "center";
+      headerArea.style.marginBottom = "8px";
+      headerArea.style.borderBottom = "1px solid #e0e7ff";
+      headerArea.style.paddingBottom = "4px";
+
+      const statusText = document.createElement("span");
+      statusText.style.fontSize = "10px";
+      statusText.style.color = "#888";
+
+      // Status Text Logic
+      if (document.getElementById("tch-loading-indicator")) {
+        statusText.textContent = "生成中...";
+      } else {
+        statusText.textContent = "AIおすすめ (自動更新中)";
+      }
+
+      const refreshBtn = document.createElement("button");
+      refreshBtn.textContent = "手動更新 (高品質)";
+      refreshBtn.style.padding = "2px 8px";
+      refreshBtn.style.fontSize = "10px";
+      refreshBtn.style.cursor = "pointer";
+      refreshBtn.style.background = "#4f46e5";
+      refreshBtn.style.color = "#fff";
+      refreshBtn.style.border = "none";
+      refreshBtn.style.borderRadius = "4px";
+
+      refreshBtn.addEventListener("click", () => {
+        renderAIForRecommended(false); // Manual trigger (High Quality)
+      });
+
+      headerArea.appendChild(statusText);
+      headerArea.appendChild(refreshBtn);
+      templatesContainer.appendChild(headerArea);
+      // --- HEADER END ---
+
+      // Content Container
+      const contentArea = document.createElement("div");
+      contentArea.id = "tch-ai-content";
+      templatesContainer.appendChild(contentArea);
+
+      // Loading State Display
       if (!isAuto) {
-        templatesContainer.innerHTML = "AI生成中...";
+        contentArea.textContent = "AI生成中...";
+        statusText.textContent = "生成中... (高品質)";
+      } else {
+        // Auto-refresh in background? 
+        // If we want to show loading for auto, uncomment:
+        // contentArea.textContent = "更新中...";
       }
 
       const apiKey = globalSettings.groqApiKey;
       if (!apiKey) {
-        templatesContainer.textContent = "APIキーが設定されていません";
+        contentArea.textContent = "APIキーが設定されていません";
         return;
       }
 
       const context = tchGetStreamContext();
-      // Inject "Is First Time" info based on currentMode
       context.isFirstTime = (currentMode === "first");
 
       const result = await tchGenerateAIComments(apiKey, context, isAuto);
 
       if (!result) {
-        templatesContainer.innerHTML = "<span style='color:#ef4444'>エラーが発生しました。<br>通信エラー</span>";
+        contentArea.innerHTML = "<span style='color:#ef4444'>エラーが発生しました。<br>通信エラー</span>";
         return;
       }
 
       if (!result.success) {
-        // Handle Rate Limit
         if (result.error === 'RATE_LIMIT') {
           const retrySec = result.retryAfter || 60;
-          console.warn(`[TCH] Rate Limit Hit. Pausing for ${retrySec}s`);
 
           if (isAuto) {
-            // Pause auto-refresh
+            // Logic for Auto Pause
             if (window.tchAutoRefreshTimer) {
               clearInterval(window.tchAutoRefreshTimer);
               window.tchAutoRefreshTimer = null;
             }
-            // Restart after cool down
+            // Retry logic...
             setTimeout(() => {
-              // Only restart if still in recommended mode
               if (activeCategory === "recommended") {
-                renderAIForRecommended(true); // Retry once (will set up interval again if successful)
                 // Re-setup interval
                 window.tchAutoRefreshTimer = setInterval(() => {
                   const panel = document.getElementById("tch-panel-root");
                   if (panel && panel.style.display !== "none" && activeCategory === "recommended") {
                     renderAIForRecommended(true);
                   }
-                }, 60000);
+                }, 180000);
               }
             }, retrySec * 1000);
+
+            // Should we show error in auto mode? Maybe just status
+            statusText.textContent = `レート制限中 (次回:${retrySec}s)`;
           } else {
-            // Manual click failed
-            templatesContainer.innerHTML = `<span style='color:#f59e0b'>レート制限 (${retrySec}秒待ち)</span>`;
+            contentArea.innerHTML = `<span style='color:#f59e0b'>レート制限 (${retrySec}秒待ち)</span>`;
           }
           return;
         }
 
-        templatesContainer.innerHTML = `<span style='color:#ef4444'>エラー: ${result.error}</span>`;
+        contentArea.innerHTML = `<span style='color:#ef4444'>エラー: ${result.error}</span>`;
         return;
       }
 
       const suggestions = result.data;
 
       if (suggestions.length === 0) {
-        templatesContainer.textContent = "生成結果なし";
+        contentArea.textContent = "生成結果なし";
         return;
       }
 
-      // Render manual-like buttons
-      templatesContainer.innerHTML = "";
+      // Render Suggestions
+      contentArea.innerHTML = ""; // Clear loading/old
+      const listContainer = document.createElement("div");
+      listContainer.style.display = "flex";
+      listContainer.style.flexDirection = "column";
+      listContainer.style.gap = "4px";
+
       suggestions.forEach((text, idx) => {
         const btn = document.createElement("button");
         btn.className = "tch-template-btn";
         btn.textContent = text;
-        btn.style.border = "1px solid #a5b4fc"; // Slight visual distinction for AI
+        btn.style.border = "1px solid #a5b4fc";
 
         btn.addEventListener("click", () => {
-          // Normal send logic
           const now = Date.now();
-          // Use a dummy ID for cooldown map
-          const dummyId = `ai-${now}-${idx}`;
-
-          if (now - (tchLastUsedMap["ai-last"] || 0) < (globalSettings.coolDownMs || 0)) {
-            return;
-          }
+          if (now - (tchLastUsedMap["ai-last"] || 0) < (globalSettings.coolDownMs || 0)) return;
           tchLastUsedMap["ai-last"] = now;
 
           tchInsertTextToChat(text);
-
           if (globalSettings.autoSend) {
             tchSendChat();
             tchRecordHistory();
           }
         });
-
-        templatesContainer.appendChild(btn);
+        listContainer.appendChild(btn);
       });
+      contentArea.appendChild(listContainer);
+
+      // Update Status Normal
+      statusText.textContent = isAuto ? "自動更新済み" : "生成完了";
     }
 
     // Auto-Update Logic (Timer)
     // Clear any existing timer to avoid duplicates on re-render
-    if (window.tchAutoRefreshTimer) {
-      clearInterval(window.tchAutoRefreshTimer);
-      window.tchAutoRefreshTimer = null;
-    }
+    clearInterval(window.tchAutoRefreshTimer);
+    window.tchAutoRefreshTimer = null;
 
     // Only set timer if Recommended is active
     if (activeCategory === "recommended") {
@@ -810,47 +863,47 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
         if (panel && panel.style.display !== "none" && activeCategory === "recommended") {
           renderAIForRecommended(true);
         }
-      }, 60000); // 60 seconds
-    }
-  };
-
-  const renderButtons = (list, catId) => {
-    templatesContainer.innerHTML = "";
-    const filtered = list.filter(t => t.categoryId === catId);
-
-    if (filtered.length === 0) {
-      templatesContainer.textContent = "（空）";
-      return;
+      }, 180000); // 3 minutes (180,000 ms)
     }
 
-    // Enforce stricter 5-item limit as requested
-    const validItems = filtered.slice(0, 5);
+    function renderButtons(list, catId) {
+      templatesContainer.innerHTML = "";
+      const filtered = list.filter(t => t.categoryId === catId);
 
-    validItems.forEach((tpl) => {
-      const btn = document.createElement("button");
-      btn.className = "tch-template-btn";
-      btn.textContent = tpl.text;
+      if (filtered.length === 0) {
+        templatesContainer.textContent = "（空）";
+        return;
+      }
 
-      btn.addEventListener("click", () => {
-        const now = Date.now();
-        const lastUsed = tchLastUsedMap[tpl.id] || 0;
-        if (now - lastUsed < (globalSettings.coolDownMs || 0)) {
-          return;
-        }
-        tchLastUsedMap[tpl.id] = now;
+      // Enforce stricter 5-item limit as requested
+      const validItems = filtered.slice(0, 5);
 
-        tchInsertTextToChat(tpl.text);
+      validItems.forEach((tpl) => {
+        const btn = document.createElement("button");
+        btn.className = "tch-template-btn";
+        btn.textContent = tpl.text;
 
-        // RECORD HISTORY Only on AutoSend or Manual Send (via global listeners)
-        if (globalSettings.autoSend) {
-          tchSendChat();
-          tchRecordHistory();
-        }
+        btn.addEventListener("click", () => {
+          const now = Date.now();
+          const lastUsed = tchLastUsedMap[tpl.id] || 0;
+          if (now - lastUsed < (globalSettings.coolDownMs || 0)) {
+            return;
+          }
+          tchLastUsedMap[tpl.id] = now;
+
+          tchInsertTextToChat(tpl.text);
+
+          // RECORD HISTORY Only on AutoSend or Manual Send (via global listeners)
+          if (globalSettings.autoSend) {
+            tchSendChat();
+            tchRecordHistory();
+          }
+        });
+
+        templatesContainer.appendChild(btn);
       });
-
-      templatesContainer.appendChild(btn);
-    });
-  };
+    };
+  }
 
   // Initial call
   updateModeUI();
@@ -867,6 +920,14 @@ function tchInit() {
       }
 
       const globalSettings = { ...TCH_DEFAULT_GLOBAL_SETTINGS, ...(data.globalSettings || {}) };
+
+      // Master Switch Check
+      if (globalSettings.extensionEnabled === false) {
+        tchLog("Extension is disabled via settings.");
+        const existing = document.getElementById("tch-panel-root");
+        if (existing) existing.remove();
+        return; // Stop initialization
+      }
 
       let storedTemplates = data.templates || {};
       if (storedTemplates["*"] && !storedTemplates.regular) {
@@ -1048,6 +1109,28 @@ document.addEventListener("click", (e) => {
     tchRecordHistory();
   }
 }, true);
+
+// Dynamic Settings Update Listener
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'sync') {
+    if (changes.globalSettings || changes.templates) {
+      tchLog("Settings changed, re-initializing panel...");
+
+      // Remove existing panel
+      const existing = document.getElementById("tch-panel-root");
+      if (existing) existing.remove();
+
+      // Clear any running AI timer
+      if (window.tchAutoRefreshTimer) {
+        clearInterval(window.tchAutoRefreshTimer);
+        window.tchAutoRefreshTimer = null;
+      }
+
+      // Re-initialize with new settings
+      tchInit();
+    }
+  }
+});
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {

@@ -225,6 +225,7 @@ function gatherTemplatesFromDOM() {
 
 function initOptions() {
   const saveBtn = $("save-btn");
+  const extensionEnabledCheckbox = $("global-extension-enabled");
   const autoSendCheckbox = $("global-autosend");
   const cooldownInput = $("global-cooldown");
   const btnFirst = $("mode-btn-first");
@@ -233,6 +234,9 @@ function initOptions() {
 
   // Load
   loadAllFromStorage(({ globalSettings, templates }) => {
+    // Default to true if undefined
+    extensionEnabledCheckbox.checked = (globalSettings.extensionEnabled !== false);
+
     autoSendCheckbox.checked = !!globalSettings.autoSend;
     cooldownInput.value = globalSettings.coolDownMs.toString();
 
@@ -265,6 +269,7 @@ function initOptions() {
   saveBtn.addEventListener("click", () => {
     workingTemplates[currentMode] = gatherTemplatesFromDOM();
 
+    const extensionEnabled = extensionEnabledCheckbox.checked;
     const autoSend = autoSendCheckbox.checked;
     const coolDownMs = parseInt(cooldownInput.value || "0", 10) || 0;
     const groqApiKey = apiKeyInput.value.trim();
@@ -272,10 +277,11 @@ function initOptions() {
     loadAllFromStorage(({ globalSettings }) => {
       const newSettings = {
         ...globalSettings,
+        extensionEnabled, // Save enabled state
         autoSend,
         coolDownMs,
         activeMode: currentMode,
-        groqApiKey // Save Groq Key
+        groqApiKey
       };
 
       saveAllToStorage(newSettings, workingTemplates);
