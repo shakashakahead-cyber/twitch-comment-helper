@@ -44,6 +44,20 @@
     </section>
 
     <section>
+      <h2>Groq API 設定</h2>
+      <p>「おすすめ」カテゴリのAI生成機能を使用するには、Groq APIのキーが必要です。<br>
+        キーが未設定、または無効な場合は「おすすめ」カテゴリは表示されません。</p>
+      <div class="setting-item">
+        <label for="groq-api-key">Groq API Key (Llama 3):</label>
+        <input type="password" id="groq-api-key" placeholder="gsk_..." style="width: 100%; max-width: 400px;">
+        <p class="desc">
+          無料枠が非常に広い (1日1万回以上) Groq APIを使用します。<br>
+          キーは <a href="https://console.groq.com/keys" target="_blank">Groq Console</a> から無料で取得できます。
+        </p>
+      </div>
+    </section>
+
+    <section>
       <h2>全体設定</h2>
       <label class="checkbox-row">
         <input type="checkbox" id="global-autosend" />

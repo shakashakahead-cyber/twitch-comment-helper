@@ -229,15 +229,18 @@ function initOptions() {
   const cooldownInput = $("global-cooldown");
   const btnFirst = $("mode-btn-first");
   const btnRegular = $("mode-btn-regular");
+  const apiKeyInput = $("groq-api-key");
 
   // Load
   loadAllFromStorage(({ globalSettings, templates }) => {
     autoSendCheckbox.checked = !!globalSettings.autoSend;
     cooldownInput.value = globalSettings.coolDownMs.toString();
 
+    if (globalSettings.groqApiKey) {
+      apiKeyInput.value = globalSettings.groqApiKey;
+    }
+
     workingTemplates = templates;
-    // activeMode logic? If user saved mode in popup, maybe we default to that?
-    // Or just default to Regular in options? Let's use stored setting if available.
     if (globalSettings.activeMode) {
       currentMode = globalSettings.activeMode;
     }
@@ -247,37 +250,32 @@ function initOptions() {
 
   // Mode Switching
   btnFirst.addEventListener("click", () => {
-    // Save current inputs to state before switching?
-    // We update state on 'input' event, so state is typically fresh. 
-    // BUT, the 'input' event approach requires 'gatherTemplatesFromDOM' to be perfect.
-    // Let's do a force gather before switch just in case.
     workingTemplates[currentMode] = gatherTemplatesFromDOM();
-
     currentMode = "first";
     renderCurrentMode();
   });
 
   btnRegular.addEventListener("click", () => {
     workingTemplates[currentMode] = gatherTemplatesFromDOM();
-
     currentMode = "regular";
     renderCurrentMode();
   });
 
   // Save
   saveBtn.addEventListener("click", () => {
-    // Gather current visible inputs one last time
     workingTemplates[currentMode] = gatherTemplatesFromDOM();
 
     const autoSend = autoSendCheckbox.checked;
     const coolDownMs = parseInt(cooldownInput.value || "0", 10) || 0;
+    const groqApiKey = apiKeyInput.value.trim();
 
     loadAllFromStorage(({ globalSettings }) => {
       const newSettings = {
         ...globalSettings,
         autoSend,
         coolDownMs,
-        activeMode: currentMode // Persist which mode we are editing/using
+        activeMode: currentMode,
+        groqApiKey // Save Groq Key
       };
 
       saveAllToStorage(newSettings, workingTemplates);

@@ -136,16 +136,161 @@ function tchRecordHistory() {
       if (chrome.runtime.lastError) return;
 
       const history = data.history || {};
-      // If not already in history, or we want to update timestamp
       if (!history[channel]) {
         history[channel] = Date.now();
         chrome.storage.sync.set({ history });
         tchLog("History recorded for:", channel);
       }
     });
+
+    // Also track user's own session messages
+    // The event listener calls this after matching an Enter key or button click.
+    // For manual interaction, we don't easily get the text content *after* send because the input clears.
+    // So we should try to capture the input value *before* it clears? 
+    // Or just hook into tchInsertTextToChat calls + keydown listeners.
+    const input = tchFindChatInput();
+    if (input) {
+      // Approximate capture: if we are here, user likely sent what is currently in input (or just cleared)
+      // Actually, for keydown 'Enter', the value is still there.
+      // For button click, it might be tricky.
+      // Let's rely on a helper that records the value.
+      let text = "";
+      if (input.tagName === "TEXTAREA") {
+        text = input.value;
+      } else {
+        text = input.textContent; // contenteditable
+      }
+      if (text && text.trim()) {
+        tchRecordUserExhaust(text.trim());
+      }
+    }
+
   } catch (e) {
     console.error("[TCH] History Record Error:", e);
   }
+}
+
+// ========== コンテキスト取得 (Scraping) ==========
+
+const MAX_USER_HISTORY = 5;
+let tchUserSessionHistory = [];
+
+function tchRecordUserExhaust(text) {
+  // Avoid duplicates if user spams?
+  if (tchUserSessionHistory.length > 0 && tchUserSessionHistory[tchUserSessionHistory.length - 1] === text) {
+    return;
+  }
+  tchUserSessionHistory.push(text);
+  if (tchUserSessionHistory.length > MAX_USER_HISTORY) {
+    tchUserSessionHistory.shift();
+  }
+  tchLog("Recorded user message:", text);
+}
+
+function tchGetStreamContext() {
+  // 1. Title & Game (Category)
+  // Selectors might change, but standard Twitch ones are usually stable enough for extension
+  let title = "";
+  let game = "";
+
+  // Title
+  // [data-a-target="stream-title"] is very common
+  const titleEl = document.querySelector('[data-a-target="stream-title"]');
+  if (titleEl) {
+    title = titleEl.textContent;
+  } else {
+    // Fallback: document.title usually has "ChannelName - Twitch" or similar.
+    // Or og:title meta tag
+    title = document.title;
+  }
+
+  // Game/Category
+  // [data-a-target="stream-game-link"] > span
+  const gameEl = document.querySelector('[data-a-target="stream-game-link"] span, [data-a-target="video-info-game-name"]');
+  if (gameEl) {
+    game = gameEl.textContent;
+  }
+
+  // 2. Chat Log (Reduced to 20 for performance balance)
+  const chatLines = [];
+  const messages = document.querySelectorAll('[data-a-target="chat-line-message"]');
+  const start = Math.max(0, messages.length - 20); // Get last 20
+  for (let i = start; i < messages.length; i++) {
+    const row = messages[i];
+    const fragments = row.querySelectorAll('.text-fragment, [data-a-target="chat-message-text"]');
+    let lineText = "";
+    if (fragments.length > 0) {
+      fragments.forEach(f => lineText += f.textContent);
+    } else {
+      lineText = row.textContent;
+    }
+    lineText = lineText.trim();
+    if (lineText) chatLines.push(lineText);
+  }
+
+  // 3. Extended Metadata (Tags, Viewer Count, Display Name)
+
+  // Viewer Count
+  // [data-a-target="animated-channel-view-count"] is standard
+  let viewerCount = "Unknown";
+  const viewerEl = document.querySelector('[data-a-target="animated-channel-view-count"]');
+  if (viewerEl) {
+    viewerCount = viewerEl.textContent; // e.g., "1.2K", "500"
+  }
+
+  // Stream Tags
+  // Usually in [data-a-target="stream-tags"] or links under title
+  const tags = [];
+  const tagEls = document.querySelectorAll('a[href*="/directory/all/tags/"]');
+  tagEls.forEach(el => {
+    const tagText = el.textContent.trim();
+    if (tagText && !tags.includes(tagText)) {
+      tags.push(tagText);
+    }
+  });
+
+  // Channel Display Name (e.g. "SHAKA")
+  let channelName = tchGetChannelName() || "Streamer"; // Default to ID if available
+
+  // Selectors tried in order:
+  // 1. Live channel user display name
+  // 2. Headings
+  // 3. Metadata tags
+  const nameSelectors = [
+    '[data-a-target="user-display-name"]',
+    'h1.core-chevron-title',
+    '.channel-info-content h1',
+    '[data-test-selector="stream-info-card-component__display-name"]',
+    '.home-header-sticky h1', // When sticky header is active
+  ];
+
+  for (const sel of nameSelectors) {
+    const el = document.querySelector(sel);
+    if (el && el.textContent.trim()) {
+      channelName = el.textContent.trim();
+      break;
+    }
+  }
+
+  // If still "Streamer" (and ID wasn't found in URL?), try title fallback
+  if (channelName === "Streamer") {
+    // Attempt to grab from document title "Name - Twitch"
+    const docTitle = document.title;
+    const match = docTitle.match(/^(.+?) - Twitch$/);
+    if (match) {
+      channelName = match[1];
+    }
+  }
+
+  return {
+    title,
+    game,
+    tags,
+    viewerCount,
+    channelName,
+    chatLogs: chatLines,
+    userHistory: tchUserSessionHistory
+  };
 }
 
 // ========== チャット入力欄の取得 ==========
@@ -495,13 +640,26 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
       }
     });
 
+    // Add Recommended if API Key is present and valid string
+    const hasApiKey = globalSettings.groqApiKey && typeof globalSettings.groqApiKey === 'string' && globalSettings.groqApiKey.trim().length > 0;
+
+    // TCH_DEFAULT_CATEGORIES.recommended was set in tchInit if key exists, but double check here.
+    if (hasApiKey && TCH_DEFAULT_CATEGORIES.recommended && !categories.includes("recommended")) {
+      categories.push("recommended");
+    }
+
     if (categories.length === 0) {
       tabs.innerHTML = "";
       templatesContainer.textContent = "設定がありません";
       return;
     }
 
-    let activeCategory = categories[0];
+    // If Recommended exists, make it the default active category
+    if (categories.includes("recommended")) {
+      activeCategory = "recommended";
+    } else {
+      activeCategory = categories[0];
+    }
 
     // Render Tabs
     tabs.innerHTML = "";
@@ -513,7 +671,8 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
       }
       tabEl.textContent = TCH_DEFAULT_CATEGORIES[catId] || catId;
       tabEl.dataset.categoryId = catId;
-      tabEl.addEventListener("click", () => {
+
+      tabEl.addEventListener("click", async () => {
         activeCategory = catId;
         tabs.querySelectorAll(".tch-tab").forEach((t) => {
           t.classList.toggle(
@@ -521,13 +680,138 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
             t.dataset.categoryId === activeCategory
           );
         });
-        renderButtons(templatesList, activeCategory);
+
+        if (catId === "recommended") {
+          // AI Flow
+          await renderAIForRecommended();
+        } else {
+          renderButtons(templatesList, activeCategory);
+        }
       });
       tabs.appendChild(tabEl);
     });
 
     // Initial render of buttons
-    renderButtons(templatesList, activeCategory);
+    if (activeCategory === "recommended") {
+      renderAIForRecommended();
+    } else {
+      renderButtons(templatesList, activeCategory);
+    }
+
+    async function renderAIForRecommended(isAuto = false) {
+      if (!isAuto) {
+        templatesContainer.innerHTML = "AI生成中...";
+      }
+
+      const apiKey = globalSettings.groqApiKey;
+      if (!apiKey) {
+        templatesContainer.textContent = "APIキーが設定されていません";
+        return;
+      }
+
+      const context = tchGetStreamContext();
+      // Inject "Is First Time" info based on currentMode
+      context.isFirstTime = (currentMode === "first");
+
+      const result = await tchGenerateAIComments(apiKey, context, isAuto);
+
+      if (!result) {
+        templatesContainer.innerHTML = "<span style='color:#ef4444'>エラーが発生しました。<br>通信エラー</span>";
+        return;
+      }
+
+      if (!result.success) {
+        // Handle Rate Limit
+        if (result.error === 'RATE_LIMIT') {
+          const retrySec = result.retryAfter || 60;
+          console.warn(`[TCH] Rate Limit Hit. Pausing for ${retrySec}s`);
+
+          if (isAuto) {
+            // Pause auto-refresh
+            if (window.tchAutoRefreshTimer) {
+              clearInterval(window.tchAutoRefreshTimer);
+              window.tchAutoRefreshTimer = null;
+            }
+            // Restart after cool down
+            setTimeout(() => {
+              // Only restart if still in recommended mode
+              if (activeCategory === "recommended") {
+                renderAIForRecommended(true); // Retry once (will set up interval again if successful)
+                // Re-setup interval
+                window.tchAutoRefreshTimer = setInterval(() => {
+                  const panel = document.getElementById("tch-panel-root");
+                  if (panel && panel.style.display !== "none" && activeCategory === "recommended") {
+                    renderAIForRecommended(true);
+                  }
+                }, 60000);
+              }
+            }, retrySec * 1000);
+          } else {
+            // Manual click failed
+            templatesContainer.innerHTML = `<span style='color:#f59e0b'>レート制限 (${retrySec}秒待ち)</span>`;
+          }
+          return;
+        }
+
+        templatesContainer.innerHTML = `<span style='color:#ef4444'>エラー: ${result.error}</span>`;
+        return;
+      }
+
+      const suggestions = result.data;
+
+      if (suggestions.length === 0) {
+        templatesContainer.textContent = "生成結果なし";
+        return;
+      }
+
+      // Render manual-like buttons
+      templatesContainer.innerHTML = "";
+      suggestions.forEach((text, idx) => {
+        const btn = document.createElement("button");
+        btn.className = "tch-template-btn";
+        btn.textContent = text;
+        btn.style.border = "1px solid #a5b4fc"; // Slight visual distinction for AI
+
+        btn.addEventListener("click", () => {
+          // Normal send logic
+          const now = Date.now();
+          // Use a dummy ID for cooldown map
+          const dummyId = `ai-${now}-${idx}`;
+
+          if (now - (tchLastUsedMap["ai-last"] || 0) < (globalSettings.coolDownMs || 0)) {
+            return;
+          }
+          tchLastUsedMap["ai-last"] = now;
+
+          tchInsertTextToChat(text);
+
+          if (globalSettings.autoSend) {
+            tchSendChat();
+            tchRecordHistory();
+          }
+        });
+
+        templatesContainer.appendChild(btn);
+      });
+    }
+
+    // Auto-Update Logic (Timer)
+    // Clear any existing timer to avoid duplicates on re-render
+    if (window.tchAutoRefreshTimer) {
+      clearInterval(window.tchAutoRefreshTimer);
+      window.tchAutoRefreshTimer = null;
+    }
+
+    // Only set timer if Recommended is active
+    if (activeCategory === "recommended") {
+      window.tchAutoRefreshTimer = setInterval(() => {
+        // Double check visibility and activity
+        const panel = document.getElementById("tch-panel-root");
+        if (panel && panel.style.display !== "none" && activeCategory === "recommended") {
+          renderAIForRecommended(true);
+        }
+      }, 60000); // 60 seconds
+    }
   };
 
   const renderButtons = (list, catId) => {
@@ -605,15 +889,28 @@ function tchInit() {
         regular: getOrDef(storedTemplates.regular, TCH_DEFAULT_TEMPLATES.regular)
       };
 
-      tchLog("Initialized with templates:", templates);
-      tchLog("Current History:", history);
+      // Add "recommended" if API Key exists and is valid string
+      if (globalSettings.groqApiKey && typeof globalSettings.groqApiKey === 'string' && globalSettings.groqApiKey.trim().length > 0) {
+        TCH_DEFAULT_CATEGORIES.recommended = "おすすめ（AI）";
+      } else {
+        // Ensure it's not there
+        delete TCH_DEFAULT_CATEGORIES.recommended;
+      }
+
+      const safeTemplates = JSON.parse(JSON.stringify(templates));
+      const safeHistory = JSON.parse(JSON.stringify(history));
+
+      tchLog("Initialized with templates:", safeTemplates);
+      tchLog("Current History:", safeHistory);
       tchLog("Detected Channel:", tchGetChannelName());
+      tchLog("API Key Present:", !!(globalSettings.groqApiKey && globalSettings.groqApiKey.trim().length > 0));
 
       const root = tchCreatePanelRoot(globalSettings);
       tchBuildPanelContent(root, globalSettings, templates, history);
     });
   } catch (e) {
     console.error("[TCH] Context Invalidated or Init Error:", e);
+    // ... error handling
     const warn = document.createElement("div");
     warn.style.position = "fixed";
     warn.style.top = "10px";
@@ -629,6 +926,49 @@ function tchInit() {
     warn.textContent = "拡張機能が更新されました。ページを再読み込みしてください。";
     document.body.appendChild(warn);
   }
+}
+
+// ========== Navigation Handling (SPA) ==========
+let lastUrl = location.href;
+new MutationObserver(() => {
+  const url = location.href;
+  if (url !== lastUrl) {
+    lastUrl = url;
+    tchLog("URL changed to:", url);
+    // Debounce re-init to allow DOM to settle
+    setTimeout(() => {
+      // Re-run initialization to decide First/Regular mode and bind to new DOM if needed
+      // We can just call tchInit() again? 
+      // tchInit removes existing panel if detected in storage listener, but maybe we should explicitly clear it here?
+      const existing = document.getElementById("tch-panel-root");
+      if (existing) existing.remove();
+      tchInit();
+    }, 1000); // Wait 1 sec for Twitch DOM to swap
+  }
+}).observe(document.body, { childList: true, subtree: true });
+
+// Initial call
+tchInit();
+
+async function tchGenerateAIComments(apiKey, context, isAuto = false) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      {
+        type: "TCH_GENERATE_AI",
+        apiKey: apiKey,
+        context: context,
+        isAuto: isAuto
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.error("[TCH] Runtime Error:", chrome.runtime.lastError);
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve(response);
+      }
+    );
+  });
 }
 
 // Watchdog to handle SPA navigation or DOM wiping
