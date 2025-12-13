@@ -31,13 +31,23 @@ async function handleAIRequest(apiKey, context, isAuto = false) {
 
   // Prompt Construction
   const gameContext = context.game ? `「${context.game}」の` : "";
-  const systemPrompt = `あなたはTwitchで${gameContext}配信を楽しんでいる視聴者（リスナー）の1人です。
-その場に合った、自然な日本語のチャットを投稿してください。
-AIとしての振る舞い（説明口調、丁寧語、要約）は一切不要です。`;
+
+  // 1. System Prompt: Role & Strict constraints
+  const systemPrompt = `あなたはTwitchで${gameContext}配信を見ている視聴者（リスナー）。
+出力は配信用の「短いリアクションチャット案」です。
+
+【厳守ルール】
+- 丁寧語/説明/要約/AIメタ発言（「AIです」「〜と思います」等）は一切禁止
+- 語尾は「〜w / 〜じゃん / 〜かも / 〜！ / 〜？？」等で自然に
+- 1件あたり15〜25文字
+- ログの文章を8文字以上連続で引用しない（コピペ禁止）
+- 誹謗中傷/差別/性的/個人情報/過度な指示（自治厨）は禁止
+- JSONのみで返す: {"suggestions":[...]}`;
 
   // Compact logs to save tokens
   const compactedLogs = compactChatLogs(context.chatLogs);
 
+  // 2. User Prompt: Context & Fixed Order Strategy
   const userPrompt = `
 配信タイトル:${context.title || '不明'}
 ゲーム:${context.game || '不明'}
@@ -46,14 +56,19 @@ AIとしての振る舞い（説明口調、丁寧語、要約）は一切不要
 直近ログ:
 ${compactedLogs}
 
-依頼:
-短いチャット案を5つ。
-- 話題を推測してリアクション（感想・ツッコミ・共感・質問）
-- 1つだけ具体要素（キャラ名/用語/数値）を含めてOK
-- 1件あたり15〜25文字推奨
-- 「初見」が「はい」の時だけ、1つ挨拶を混ぜる
+作成:
+以下の**順番固定**で5件作成してください。
+1. ツッコミ（鋭く）
+2. 共感（しみじみ）
+3. 驚き/歓声（短く）
+4. 質問（相手が答えやすいもの）
+5. 応援/称賛（ポジティブに）
 
-出力はJSONオブジェクトのみ: {"suggestions": ["...","..."]}`;
+※話題が推測できない時は無理せず、汎用の盛り上げ/質問にすること
+※固有名詞/数値は全体で最大1件まで
+※「初見」が「はい」の場合、どれか1つを**自然な挨拶**に置換
+
+出力はJSONオブジェクトのみ: {"suggestions": ["...","...","...","...","..."]}`;
 
   const payload = {
     model: model,
@@ -62,7 +77,7 @@ ${compactedLogs}
       { role: "user", content: userPrompt }
     ],
     response_format: { type: "json_object" }, // Enforce JSON mode
-    temperature: 0.7,
+    temperature: 0.6, // Lower temperature for stability with templates
     max_tokens: 160
   };
 
