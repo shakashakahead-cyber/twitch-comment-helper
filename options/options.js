@@ -1,8 +1,10 @@
 const DEFAULT_GLOBAL_SETTINGS = {
+  extensionEnabled: true,
   autoSend: false,
   coolDownMs: 3000,
   position: null,
-  activeMode: "regular" // 'regular' (default/migrated) or 'first'
+  activeMode: "regular", // 'regular' (default/migrated) or 'first'
+  aiSendChatLogs: false
 };
 
 const FIXED_CATEGORIES = ["greeting", "praise", "fun"];
@@ -11,43 +13,43 @@ const SLOT_LIMIT = 5;
 // Default templates for "First-time" (初見)
 const DEFAULTS_FIRST = [
   { id: "f-greet-1", text: "初見です！", categoryId: "greeting" },
-  { id: "f-greet-2", text: "お邪魔します～", categoryId: "greeting" },
-  { id: "f-greet-3", text: "おすすめから来ました！", categoryId: "greeting" },
-  { id: "f-greet-4", text: "楽しそうですね！", categoryId: "greeting" },
-  { id: "f-greet-5", text: "フォローしました！", categoryId: "greeting" },
+  { id: "f-greet-2", text: "初見失礼します！", categoryId: "greeting" },
+  { id: "f-greet-3", text: "お邪魔します！", categoryId: "greeting" },
+  { id: "f-greet-4", text: "こんばんは！", categoryId: "greeting" },
+  { id: "f-greet-5", text: "おすすめから来ました！", categoryId: "greeting" },
 
-  { id: "f-praise-1", text: "ナイスです！", categoryId: "praise" },
-  { id: "f-praise-2", text: "888888", categoryId: "praise" },
-  { id: "f-praise-3", text: "すごい！", categoryId: "praise" },
-  { id: "f-praise-4", text: "上手ですね", categoryId: "praise" },
-  { id: "f-praise-5", text: "感動", categoryId: "praise" },
+  { id: "f-praise-1", text: "ナイス！", categoryId: "praise" },
+  { id: "f-praise-2", text: "うま！", categoryId: "praise" },
+  { id: "f-praise-3", text: "つよw", categoryId: "praise" },
+  { id: "f-praise-4", text: "GG", categoryId: "praise" },
+  { id: "f-praise-5", text: "888888", categoryId: "praise" },
 
   { id: "f-fun-1", text: "草", categoryId: "fun" },
   { id: "f-fun-2", text: "！？", categoryId: "fun" },
-  { id: "f-fun-3", text: "勉強になります", categoryId: "fun" },
-  { id: "f-fun-4", text: "なるほど", categoryId: "fun" },
-  { id: "f-fun-5", text: "ありがとうございます", categoryId: "fun" }
+  { id: "f-fun-3", text: "えぐw", categoryId: "fun" },
+  { id: "f-fun-4", text: "うおお", categoryId: "fun" },
+  { id: "f-fun-5", text: "まじかw", categoryId: "fun" }
 ];
 
 // Default templates for "Regular" (常連)
 const DEFAULTS_REGULAR = [
-  { id: "r-greet-1", text: "おっす", categoryId: "greeting" },
-  { id: "r-greet-2", text: "やっほー", categoryId: "greeting" },
-  { id: "r-greet-3", text: "ども", categoryId: "greeting" },
-  { id: "r-greet-4", text: "|ω・)ﾁﾗｯ", categoryId: "greeting" },
-  { id: "r-greet-5", text: "おかえり", categoryId: "greeting" },
+  { id: "r-greet-1", text: "こん", categoryId: "greeting" },
+  { id: "r-greet-2", text: "こんちゃ", categoryId: "greeting" },
+  { id: "r-greet-3", text: "こんばんは", categoryId: "greeting" },
+  { id: "r-greet-4", text: "おは", categoryId: "greeting" },
+  { id: "r-greet-5", text: "ただいま", categoryId: "greeting" },
 
   { id: "r-praise-1", text: "ナイス！", categoryId: "praise" },
-  { id: "r-praise-2", text: "GG", categoryId: "praise" },
-  { id: "r-praise-3", text: "神", categoryId: "praise" },
-  { id: "r-praise-4", text: "天才", categoryId: "praise" },
-  { id: "r-praise-5", text: "つっよ", categoryId: "praise" },
+  { id: "r-praise-2", text: "うま！", categoryId: "praise" },
+  { id: "r-praise-3", text: "つよw", categoryId: "praise" },
+  { id: "r-praise-4", text: "GG", categoryId: "praise" },
+  { id: "r-praise-5", text: "888888", categoryId: "praise" },
 
   { id: "r-fun-1", text: "草", categoryId: "fun" },
   { id: "r-fun-2", text: "！？", categoryId: "fun" },
-  { id: "r-fun-3", text: "わかる", categoryId: "fun" },
-  { id: "r-fun-4", text: "たすかる", categoryId: "fun" },
-  { id: "r-fun-5", text: "なるほど", categoryId: "fun" }
+  { id: "r-fun-3", text: "えぐw", categoryId: "fun" },
+  { id: "r-fun-4", text: "うおお", categoryId: "fun" },
+  { id: "r-fun-5", text: "声出たw", categoryId: "fun" }
 ];
 
 // In-memory state to hold unsaved changes
@@ -231,6 +233,7 @@ function initOptions() {
   const btnFirst = $("mode-btn-first");
   const btnRegular = $("mode-btn-regular");
   const apiKeyInput = $("groq-api-key");
+  const aiSendChatLogsCheckbox = $("ai-send-chat-logs");
 
   // Load
   loadAllFromStorage(({ globalSettings, templates }) => {
@@ -239,6 +242,7 @@ function initOptions() {
 
     autoSendCheckbox.checked = !!globalSettings.autoSend;
     cooldownInput.value = globalSettings.coolDownMs.toString();
+    aiSendChatLogsCheckbox.checked = !!globalSettings.aiSendChatLogs;
 
     if (globalSettings.groqApiKey) {
       apiKeyInput.value = globalSettings.groqApiKey;
@@ -273,6 +277,7 @@ function initOptions() {
     const autoSend = autoSendCheckbox.checked;
     const coolDownMs = parseInt(cooldownInput.value || "0", 10) || 0;
     const groqApiKey = apiKeyInput.value.trim();
+    const aiSendChatLogs = aiSendChatLogsCheckbox.checked;
 
     loadAllFromStorage(({ globalSettings }) => {
       const newSettings = {
@@ -281,7 +286,8 @@ function initOptions() {
         autoSend,
         coolDownMs,
         activeMode: currentMode,
-        groqApiKey
+        groqApiKey,
+        aiSendChatLogs
       };
 
       saveAllToStorage(newSettings, workingTemplates);

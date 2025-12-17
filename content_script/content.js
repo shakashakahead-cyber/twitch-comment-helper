@@ -7,48 +7,49 @@ const TCH_DEFAULT_GLOBAL_SETTINGS = {
   autoSend: false,
   coolDownMs: 3000,
   position: null, // { left, top }
-  activeMode: "regular"
+  activeMode: "regular",
+  aiSendChatLogs: false
 };
 
 // Mode definitions
 const TCH_DEFAULTS_FIRST = [
   { id: "f-greet-1", text: "初見です！", categoryId: "greeting" },
-  { id: "f-greet-2", text: "お邪魔します～", categoryId: "greeting" },
-  { id: "f-greet-3", text: "おすすめから来ました！", categoryId: "greeting" },
-  { id: "f-greet-4", text: "楽しそうですね！", categoryId: "greeting" },
-  { id: "f-greet-5", text: "フォローしました！", categoryId: "greeting" },
+  { id: "f-greet-2", text: "初見失礼します！", categoryId: "greeting" },
+  { id: "f-greet-3", text: "お邪魔します！", categoryId: "greeting" },
+  { id: "f-greet-4", text: "こんばんは！", categoryId: "greeting" },
+  { id: "f-greet-5", text: "おすすめから来ました！", categoryId: "greeting" },
 
-  { id: "f-praise-1", text: "ナイスです！", categoryId: "praise" },
-  { id: "f-praise-2", text: "888888", categoryId: "praise" },
-  { id: "f-praise-3", text: "すごい！", categoryId: "praise" },
-  { id: "f-praise-4", text: "上手ですね", categoryId: "praise" },
-  { id: "f-praise-5", text: "感動", categoryId: "praise" },
+  { id: "f-praise-1", text: "ナイス！", categoryId: "praise" },
+  { id: "f-praise-2", text: "うま！", categoryId: "praise" },
+  { id: "f-praise-3", text: "つよw", categoryId: "praise" },
+  { id: "f-praise-4", text: "GG", categoryId: "praise" },
+  { id: "f-praise-5", text: "888888", categoryId: "praise" },
 
   { id: "f-fun-1", text: "草", categoryId: "fun" },
   { id: "f-fun-2", text: "！？", categoryId: "fun" },
-  { id: "f-fun-3", text: "勉強になります", categoryId: "fun" },
-  { id: "f-fun-4", text: "なるほど", categoryId: "fun" },
-  { id: "f-fun-5", text: "ありがとうございます", categoryId: "fun" }
+  { id: "f-fun-3", text: "えぐw", categoryId: "fun" },
+  { id: "f-fun-4", text: "うおお", categoryId: "fun" },
+  { id: "f-fun-5", text: "まじかw", categoryId: "fun" }
 ];
 
 const TCH_DEFAULTS_REGULAR = [
-  { id: "r-greet-1", text: "おっす", categoryId: "greeting" },
-  { id: "r-greet-2", text: "やっほー", categoryId: "greeting" },
-  { id: "r-greet-3", text: "ども", categoryId: "greeting" },
-  { id: "r-greet-4", text: "|ω・)ﾁﾗｯ", categoryId: "greeting" },
-  { id: "r-greet-5", text: "おかえり", categoryId: "greeting" },
+  { id: "r-greet-1", text: "こん", categoryId: "greeting" },
+  { id: "r-greet-2", text: "こんちゃ", categoryId: "greeting" },
+  { id: "r-greet-3", text: "こんばんは", categoryId: "greeting" },
+  { id: "r-greet-4", text: "おは", categoryId: "greeting" },
+  { id: "r-greet-5", text: "ただいま", categoryId: "greeting" },
 
   { id: "r-praise-1", text: "ナイス！", categoryId: "praise" },
-  { id: "r-praise-2", text: "GG", categoryId: "praise" },
-  { id: "r-praise-3", text: "神", categoryId: "praise" },
-  { id: "r-praise-4", text: "天才", categoryId: "praise" },
-  { id: "r-praise-5", text: "つっよ", categoryId: "praise" },
+  { id: "r-praise-2", text: "うま！", categoryId: "praise" },
+  { id: "r-praise-3", text: "つよw", categoryId: "praise" },
+  { id: "r-praise-4", text: "GG", categoryId: "praise" },
+  { id: "r-praise-5", text: "888888", categoryId: "praise" },
 
   { id: "r-fun-1", text: "草", categoryId: "fun" },
   { id: "r-fun-2", text: "！？", categoryId: "fun" },
-  { id: "r-fun-3", text: "わかる", categoryId: "fun" },
-  { id: "r-fun-4", text: "たすかる", categoryId: "fun" },
-  { id: "r-fun-5", text: "なるほど", categoryId: "fun" }
+  { id: "r-fun-3", text: "えぐw", categoryId: "fun" },
+  { id: "r-fun-4", text: "うおお", categoryId: "fun" },
+  { id: "r-fun-5", text: "声出たw", categoryId: "fun" }
 ];
 
 const TCH_DEFAULT_TEMPLATES = {
@@ -63,6 +64,7 @@ const TCH_DEFAULT_CATEGORIES = {
 };
 
 const tchLastUsedMap = {};
+let tchIsExtensionEnabled = true;
 
 function tchLog(...args) {
   console.log("[TCH]", ...args);
@@ -188,7 +190,53 @@ function tchRecordUserExhaust(text) {
   tchLog("Recorded user message:", text);
 }
 
-function tchGetStreamContext() {
+function tchBuildChatSignals(chatLines) {
+  const signals = {
+    totalLines: Array.isArray(chatLines) ? chatLines.length : 0,
+    laugh: 0,
+    clap: 0,
+    hype: 0,
+    surprise: 0,
+    question: 0,
+    praise: 0,
+    frustration: 0,
+    tags: []
+  };
+
+  if (!Array.isArray(chatLines) || chatLines.length === 0) {
+    return signals;
+  }
+
+  for (const line of chatLines) {
+    const raw = String(line || "");
+    const text = raw.trim();
+    const lower = text.toLowerCase();
+    const dense = lower.replace(/\s+/g, "");
+
+    if (/草|ｗ|w{2,}|lol|lmao|kekw/.test(dense)) signals.laugh += 1;
+    if (/888|👏|clap/.test(dense)) signals.clap += 1;
+    if (/[?？]/.test(text)) signals.question += 1;
+    if (/ナイス|nice|うま|上手|神|天才|gg|gj/.test(lower)) signals.praise += 1;
+    if (/やば|やべ|うお|うおお|きた|来た|熱い|激アツ|逆転|勝った/.test(text)) signals.hype += 1;
+    if (/！？|!\?|えっ|え？|まじ|マジ|なに|何/.test(text)) signals.surprise += 1;
+    if (/無理|きつ|詰ん|終わった|オワタ|くそ|クソ|最悪|やらか/.test(text)) signals.frustration += 1;
+  }
+
+  const tags = [];
+  if (signals.totalLines >= 10) tags.push("流速早め");
+  if (signals.hype >= 2) tags.push("盛り上がり");
+  if (signals.laugh >= 2) tags.push("笑い多め");
+  if (signals.clap >= 1) tags.push("拍手");
+  if (signals.praise >= 2) tags.push("称賛多め");
+  if (signals.question >= 2) tags.push("質問多め");
+  if (signals.frustration >= 2) tags.push("苦戦/焦り");
+  if (signals.surprise >= 2) tags.push("驚き多め");
+  signals.tags = tags.slice(0, 5);
+
+  return signals;
+}
+
+function tchGetStreamContext({ includeChatLogs = true } = {}) {
   // 1. Title & Game (Category)
   // Selectors might change, but standard Twitch ones are usually stable enough for extension
   let title = "";
@@ -228,6 +276,8 @@ function tchGetStreamContext() {
     lineText = lineText.trim();
     if (lineText) chatLines.push(lineText);
   }
+
+  const chatSignals = tchBuildChatSignals(chatLines);
 
   // 3. Extended Metadata (Tags, Viewer Count, Display Name)
 
@@ -289,7 +339,8 @@ function tchGetStreamContext() {
     tags,
     viewerCount,
     channelName,
-    chatLogs: chatLines,
+    chatLogs: includeChatLogs ? chatLines : [],
+    chatSignals,
     userHistory: tchUserSessionHistory
   };
 }
@@ -340,35 +391,43 @@ function tchInsertTextToChat(text) {
   } else {
     // contenteditable (Twitch/Slate)
     tchLog("Found chat input (contenteditable):", input);
-    tchFocusCaret(input);
-
     try {
-      const beforeInput = new InputEvent('beforeinput', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: text
-      });
-      const handled = !input.dispatchEvent(beforeInput);
+      input.focus();
 
-      if (!handled) {
-        const execResult = document.execCommand("insertText", false, text);
-        tchLog("execCommand result:", execResult);
+      // Replace the entire message (align behavior with textarea)
+      tchSelectAllText(input);
+
+      // Give Twitch/Slate a chance to react to a "user-like" event
+      if (typeof InputEvent === "function") {
+        input.dispatchEvent(new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: text
+        }));
       }
 
-      const inputEvent = new InputEvent("input", {
-        bubbles: true,
-        cancelable: true,
-        data: text,
-        inputType: "insertText"
-      });
-      input.dispatchEvent(inputEvent);
+      // Ensure DOM is actually updated
+      const execResult = document.execCommand("insertText", false, text);
+      if (!execResult) {
+        input.textContent = text;
+      }
 
-      tchLog("Dispatched smart hybrid sequence for:", text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      tchFocusCaret(input);
     } catch (e) {
       tchLog("Insertion failed:", e);
     }
   }
+}
+
+function tchSelectAllText(el) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 function tchFocusCaret(el) {
@@ -394,16 +453,30 @@ function tchSendChat() {
   const input = tchFindChatInput();
   if (!input) return;
 
-  const enterEvent = new KeyboardEvent("keydown", {
+  try {
+    input.focus();
+  } catch { }
+
+  const keyInit = {
     key: "Enter",
     code: "Enter",
     keyCode: 13,
     which: 13,
     bubbles: true,
     cancelable: true
-  });
+  };
 
-  input.dispatchEvent(enterEvent);
+  input.dispatchEvent(new KeyboardEvent("keydown", keyInit));
+  input.dispatchEvent(new KeyboardEvent("keyup", keyInit));
+
+  // Fallback: click send button if key events didn't work
+  const sendTarget = document.querySelector('[data-a-target="chat-send-button"]');
+  const btn = (sendTarget instanceof HTMLButtonElement)
+    ? sendTarget
+    : sendTarget?.querySelector?.("button");
+  if (btn && !btn.disabled) {
+    btn.click();
+  }
 }
 
 // ========== パネル位置 ==========
@@ -577,6 +650,7 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
   const templatesContainer = root.querySelector("#tch-templates");
   const autoSendCheckbox = root.querySelector("#tch-autosend-checkbox");
   const modeSwitch = root.querySelector(".tch-mode-switch");
+  let activeCategory = null;
 
   // Logic for Auto-Mode
   const channel = tchGetChannelName();
@@ -599,11 +673,11 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
 
   // AutoSend
   autoSendCheckbox.checked = !!globalSettings.autoSend;
-  autoSendCheckbox.addEventListener("change", (e) => {
+  autoSendCheckbox.onchange = (e) => {
     const checked = e.target.checked;
     tchSaveGlobalSettings({ autoSend: checked });
     globalSettings.autoSend = checked;
-  });
+  };
 
   // Mode Switch Logic
   const updateModeUI = () => {
@@ -766,7 +840,8 @@ function tchBuildPanelContent(root, globalSettings, allTemplates, history) {
         return;
       }
 
-      const context = tchGetStreamContext();
+      const includeChatLogs = !isAuto && globalSettings.aiSendChatLogs === true;
+      const context = tchGetStreamContext({ includeChatLogs });
       context.isFirstTime = (currentMode === "first");
 
       const result = await tchGenerateAIComments(apiKey, context, isAuto);
@@ -923,11 +998,13 @@ function tchInit() {
 
       // Master Switch Check
       if (globalSettings.extensionEnabled === false) {
+        tchIsExtensionEnabled = false;
         tchLog("Extension is disabled via settings.");
         const existing = document.getElementById("tch-panel-root");
         if (existing) existing.remove();
         return; // Stop initialization
       }
+      tchIsExtensionEnabled = true;
 
       let storedTemplates = data.templates || {};
       if (storedTemplates["*"] && !storedTemplates.regular) {
@@ -968,6 +1045,9 @@ function tchInit() {
 
       const root = tchCreatePanelRoot(globalSettings);
       tchBuildPanelContent(root, globalSettings, templates, history);
+
+      // Avoid a brief flash on pages without chat input
+      root.style.display = tchFindChatInput() ? "flex" : "none";
     });
   } catch (e) {
     console.error("[TCH] Context Invalidated or Init Error:", e);
@@ -988,28 +1068,6 @@ function tchInit() {
     document.body.appendChild(warn);
   }
 }
-
-// ========== Navigation Handling (SPA) ==========
-let lastUrl = location.href;
-new MutationObserver(() => {
-  const url = location.href;
-  if (url !== lastUrl) {
-    lastUrl = url;
-    tchLog("URL changed to:", url);
-    // Debounce re-init to allow DOM to settle
-    setTimeout(() => {
-      // Re-run initialization to decide First/Regular mode and bind to new DOM if needed
-      // We can just call tchInit() again? 
-      // tchInit removes existing panel if detected in storage listener, but maybe we should explicitly clear it here?
-      const existing = document.getElementById("tch-panel-root");
-      if (existing) existing.remove();
-      tchInit();
-    }, 1000); // Wait 1 sec for Twitch DOM to swap
-  }
-}).observe(document.body, { childList: true, subtree: true });
-
-// Initial call
-tchInit();
 
 async function tchGenerateAIComments(apiKey, context, isAuto = false) {
   return new Promise((resolve) => {
@@ -1039,7 +1097,11 @@ setInterval(() => {
   const currentChannel = tchGetChannelName();
 
   // 1. Check if channel changed (SPA navigation)
-  if (currentChannel && lastChannel && currentChannel !== lastChannel) {
+  if (currentChannel !== lastChannel) {
+    if (!tchIsExtensionEnabled) {
+      lastChannel = currentChannel;
+      return;
+    }
     tchLog("Channel changed, resetting panel...");
     const existing = document.getElementById("tch-panel-root");
     if (existing) existing.remove();
@@ -1050,36 +1112,17 @@ setInterval(() => {
 
   // 2. Check if panel is missing (DOM wiped)
   if (!document.getElementById("tch-panel-root")) {
+    if (!tchIsExtensionEnabled) {
+      lastChannel = currentChannel; // Keep in sync while disabled
+      return;
+    }
     tchLog("Panel missing, re-initializing...");
     lastChannel = currentChannel; // Update lastChannel to current
     tchInit();
   } else {
     // 3. Toggle visibility based on chat existence AND visibility
     const panel = document.getElementById("tch-panel-root");
-    const chatInput = tchFindChatInput();
-
-    // Check if input is technically visible (has size)
-    const isVisible = (el) => {
-      if (!el) return false;
-
-      // 1. Size Check (Ignore 0x0 or tiny ghost elements)
-      const rect = el.getBoundingClientRect();
-      if (rect.width < 10 || rect.height < 10) return false;
-
-      // 2. Modern Browser Visibility Check
-      if (el.checkVisibility) {
-        return el.checkVisibility({
-          checkOpacity: true,
-          checkVisibilityCSS: true
-        });
-      }
-
-      // Fallback
-      const style = window.getComputedStyle(el);
-      return style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity) > 0;
-    };
-
-    const isInputVisible = isVisible(chatInput);
+    const isInputVisible = !!tchFindChatInput();
 
     if (isInputVisible) {
       if (panel.style.display === "none") panel.style.display = "flex";
